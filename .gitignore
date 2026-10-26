@@ -220,3 +220,16 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Project-specific: original source archives and extracted working copies
+# (these contain a bundled venv, a committed .env with secrets, and ~2GB of
+# models/videos — never version them)
+FINAL YEAR/
+FINAL YEAR */
+*.zip
+
+# Course report PDF kept locally, not part of the codebase
+Black_Book_Group_13.pdf
+
+# Generated e-challan PDFs
+challan_*.pdf

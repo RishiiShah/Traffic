@@ -1,0 +1,33 @@
+# Tested with Python 3.12.7
+#
+# Pinned versions below were taken from the development environment that the
+# project was last run against. The computer-vision / ML stack is pinned
+# exactly; the integration libraries (Twilio, AWS, PDF) use compatible ranges
+# because they were not present in the captured environment.
+
+# --- Core CV / ML stack (pinned to tested versions) ---
+ultralytics==8.3.128
+torch==2.7.0
+torchvision==0.22.0
+opencv-python==4.10.0.84
+numpy==2.2.5
+supervision==0.25.1
+pillow==11.2.1
+
+# --- OCR / LLM ---
+groq==0.24.0
+
+# --- Config / HTTP ---
+python-dotenv==1.1.0
+requests==2.32.3
+
+# --- Reporting / templating ---
+jinja2==3.1.6
+pdfkit>=1.0.0,<2.0.0           # also requires the wkhtmltopdf binary on PATH
+
+# --- Integrations ---
+twilio>=9.0.0,<10.0.0
+boto3>=1.34.0,<2.0.0
+
+# --- UI ---
+streamlit>=1.30.0,<2.0.0

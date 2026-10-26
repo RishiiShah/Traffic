@@ -2,6 +2,8 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
+from utils.s3_uploader import resolve_wkhtmltopdf_path
+
 # ─── Load Environment ───────────────────────────────────────────────────────────
 load_dotenv()
 
@@ -13,8 +15,9 @@ S3_REGION        = os.getenv("AWS_REGION",     "ap-south-1")
 TWILIO_SID       = os.getenv("TWILIO_ACCOUNT_SID")
 TWILIO_TOKEN     = os.getenv("TWILIO_AUTH_TOKEN")
 TWILIO_FROM      = os.getenv("TWILIO_PHONE_NUMBER")
-# VIOLATOR_MOBILE  = os.getenv("VIOLATOR_MOBILE", "+919876543210")
-VIOLATOR_MOBILE = "+918108424468"
+# Demo recipient for violation notifications. Configure via the environment;
+# notifications are mocked unless ENABLE_NOTIFICATIONS=true (see sms_sender.py).
+VIOLATOR_MOBILE  = os.getenv("DEMO_PHONE_NUMBER")
 
 # RTO API (for PUC/Insurance)
 # PUCInsurance.py will read X_RAPIDAPI_KEY and X_RAPIDAPI_HOST from env
@@ -27,7 +30,7 @@ HELMET_MODEL      = MODELS_DIR / "helmet.pt"
 PLATE_MODEL      = MODELS_DIR / "train3_best.pt"
 
 TEMPLATE_PATH    = BASE_DIR / "template" / "chalan_template.html"
-WKHTMLTOPDF_PATH = r"C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe"
+WKHTMLTOPDF_PATH = resolve_wkhtmltopdf_path()
 LOGO_URI         = (BASE_DIR / "static" / "logo.jpg").resolve().as_uri()
 
 VIDEOS_DIR       = BASE_DIR / "videos"

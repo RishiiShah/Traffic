@@ -10,7 +10,7 @@ from sms.sms_sender import SmsSender
 # from ../utils.s3_uploader import upload_to_s3
 from utils.s3_uploader import upload_to_s3
 from .OCR import process_image_for_ocr
-from checkers.PUCInsurance import details, convert_check
+from checkers.PUCInsurance import details, check_expiry, ComplianceStatus
 
 # Extra fines
 PUC_FINE       = 1000
@@ -130,19 +130,23 @@ class HelmetDetectionDetector:
                             rto       = details(plate)
                             puc_date  = rto.get("PUCExpiryDate", "")
                             ins_date  = rto.get("InsuranceExpiryDate", "")
-                            # puc_date   = "13-Jun-2024"  # Placeholder for testing
-                            # ins_date   = "15-Jun-2024"  # Placeholder for testing
-                            puc_ok    = convert_check(puc_date) if puc_date else False
-                            ins_ok    = convert_check(ins_date) if ins_date else False
+                            puc_status = check_expiry(puc_date)
+                            ins_status = check_expiry(ins_date)
 
+                            # Only a CONFIRMED expired document adds a penalty;
+                            # unknown / error states are reported, not fined.
                             extra     = 0
                             desc      = ["Rider without helmet"]
-                            if not puc_ok:
+                            if puc_status == ComplianceStatus.EXPIRED:
                                 extra   += PUC_FINE
                                 desc.append(f"Expired PUC ({puc_date})")
-                            if not ins_ok:
+                            elif puc_status in (ComplianceStatus.UNKNOWN, ComplianceStatus.ERROR):
+                                desc.append("PUC status unverified")
+                            if ins_status == ComplianceStatus.EXPIRED:
                                 extra   += INSURANCE_FINE
                                 desc.append(f"Expired Insurance ({ins_date})")
+                            elif ins_status in (ComplianceStatus.UNKNOWN, ComplianceStatus.ERROR):
+                                desc.append("Insurance status unverified")
                             full_desc = "; ".join(desc)
                             total_fee = self.base_fee + extra
 
