@@ -88,7 +88,7 @@ if uploaded_file and run_detector:
         violator_mobile   = VIOLATOR_MOBILE,
         s3_bucket         = S3_BUCKET,
         s3_region         = S3_REGION,
-        conf_threshold    = 0.0,
+        conf_threshold    = 0.4,
         vehicle_conf      = 0.5,
         vehicle_buffer    = 10,
         line_ratio        = 0.7,

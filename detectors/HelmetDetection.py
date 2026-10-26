@@ -105,11 +105,22 @@ class HelmetDetectionDetector:
                         if self.verbose:
                             print(f"[DEBUG] Bike near line at frame {frame_idx}")
 
-                        # 2) Helmet check
-                        # pad  = int((y2-y1)*0.3)
-                        # y0   = max(0, y1 - pad)
-                        # crop = frame[y0:y2, x1:x2]
-                        hr   = self.helmet_model.predict(frame, conf=self.conf_threshold)[0]
+                        # 2) Helmet check — run ONLY on this motorcycle's
+                        # region (with padding above for the rider's head) so a
+                        # no-helmet detection elsewhere in the frame cannot be
+                        # attributed to the wrong bike.
+                        fh, fw = frame.shape[:2]
+                        pad_top = int((y2 - y1) * 0.6)   # extend upward for head
+                        pad_x   = int((x2 - x1) * 0.1)
+                        cy1 = max(0, y1 - pad_top)
+                        cy2 = min(fh, y2)
+                        cx1 = max(0, x1 - pad_x)
+                        cx2 = min(fw, x2 + pad_x)
+                        crop = frame[cy1:cy2, cx1:cx2]
+                        if crop.size == 0:
+                            continue
+
+                        hr   = self.helmet_model.predict(crop, conf=self.conf_threshold)[0]
                         confs = hr.boxes.conf.cpu().numpy()
                         cls_ids = hr.boxes.cls.cpu().numpy().astype(int)
 
@@ -121,7 +132,7 @@ class HelmetDetectionDetector:
                             frame_path = os.path.join(self.violation_dir, fname)
                             cv2.imwrite(frame_path, frame)
 
-                            # a) OCR full frame for plate
+                            # a) OCR: localizes and reads the plate from the frame
                             plate     = process_image_for_ocr(frame_path, ocr_instance=self.ocr_instance) or "UNKNOWN"
                             now_str   = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                             challan_no= f"H{frame_idx}_{int(datetime.datetime.now().timestamp())}"
