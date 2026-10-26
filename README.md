@@ -186,9 +186,8 @@ on the authors' custom dataset.
     `ENABLE_NOTIFICATIONS=true` with valid Twilio credentials.
 
 5.  **Download the Model Weights**
-    The model weights (`*.pt`) are not committed to the repository (they are large
-    and gitignored). Place the following files in a `models/` directory at the
-    project root:
+    The model weights (`*.pt`) are **not committed** to the repository (they are
+    large and gitignored). Place the required files in the `models/` directory:
 
     | File | Purpose |
     | :--- | :--- |
@@ -196,10 +195,11 @@ on the authors' custom dataset.
     | `helmet.pt` | Helmet vs. no-helmet classification |
     | `train3_best.pt` | License-plate detection |
 
-    Download the base YOLO12 weights from the
-    [Ultralytics YOLO12 docs](https://docs.ultralytics.com/models/yolo12/). The
-    custom `helmet.pt` and `train3_best.pt` weights are specific to this project;
-    host them on a GitHub Release or similar and document the download link here.
+    The base YOLO12 weights come from the
+    [Ultralytics YOLO12 docs](https://docs.ultralytics.com/models/yolo12/); the
+    custom `helmet.pt` and `train3_best.pt` are specific to this project. See
+    [`models/README.md`](models/README.md) for full details on each weight, how to
+    obtain or train them, and licensing notes.
 
 ---
 
