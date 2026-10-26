@@ -25,11 +25,11 @@
 
 ## 📄 Abstract
 
-India’s rapid urbanization has led to a surge in vehicular density, rendering traditional manual traffic monitoring inefficient. Manual oversight is prone to human error, corruption, and inability to handle high-volume traffic 24/7. 
+India’s vast and growing urban population has increased the number of vehicles on the road, and traditional manual traffic monitoring is slow, error-prone, and hard to scale 24/7.
 
-**ITSS (Intelligent Traffic Surveillance System)** is a vision-based automated solution designed to enforce traffic laws with high precision. By leveraging the **[YOLOv12 (You Only Look Once)](https://docs.ultralytics.com/models/yolo12/)** architecture, which introduces attention-centric mechanisms for superior real-time performance, this system detects complex violations such as red-light jumping, speeding, and helmet-less riding.
+**ITSS (Intelligent Traffic Surveillance System)** is a vision-based automated solution that detects, classifies, and reports traffic rule violations — red-light jumping, speeding, helmet-less riding, and non-compliance with vehicle insurance and Pollution Under Control (PUC). It uses a custom-trained **[YOLOv12 (You Only Look Once)](https://docs.ultralytics.com/models/yolo12/)** detector with real-time object tracking, license-plate extraction, and OCR, and delivers e-challans through an API backend.
 
-Furthermore, the system integrates an **OCR (Optical Character Recognition)** pipeline to extract license plates and communicates with a backend API to verify **Insurance** and **Pollution Control (PUC)** status, automatically generating e-challans for offenders.
+Across the authors' test cases the system reported an overall accuracy of **93.76%**. This repository is the implementation accompanying the paper *"Intelligent Traffic Surveillance: A Vision-based System for Detecting Traffic Rule Violations"* (ICICIS 2025) — see [References & Citations](#-references--citations).
 
 ---
 
@@ -38,11 +38,11 @@ Furthermore, the system integrates an **OCR (Optical Character Recognition)** pi
 ### 1. Visual Violation Detection
 * **🔴 Red Light Violation:** Detects the traffic signal state and identifies vehicles that cross the stop line while the signal is red.
 * **⛑️ Helmet-less Rider Detection:** Classifies two-wheeler riders and specifically detects the absence of a helmet on both the rider and pillion.
-* **⚡ Speeding Detection:** Uses perspective transformation and object tracking to estimate vehicle speed in real-time.
+* **⚡ Speeding Detection:** Tracks vehicles across frames and estimates speed from centroid displacement using a pixel-to-metre conversion factor.
 
 ### 2. Automatic Number Plate Recognition (ANPR)
-* **🔍 Plate Extraction:** High-accuracy cropping of license plates from moving vehicles.
-* **📝 OCR Processing:** Converts plate images to text strings using advanced OCR engines.
+* **🔍 Plate Extraction:** License-plate region detected with a YOLOv12x model and cropped from the violation frame.
+* **📝 OCR Processing:** The cropped plate is read by the **Groq** hosted vision model (**Llama-4-Scout-17B-16E-Instruct**), then validated against Indian plate formats (state-wise and BH series) with regex.
 
 ### 3. Compliance & Enforcement
 * **☁️ API Integration:** Queries a central database using the extracted plate number.
@@ -63,9 +63,9 @@ The system operates on a pipeline approach:
     * *If Vehicle Speed > Speed Limit → Violation.*
     * *If Motorbike AND Head AND No Helmet → Violation.*
 5.  **Post-Processing:**
-    * Crop License Plate → Pass to OCR → Get String.
-    * Send String to API → specific JSON response.
-6.  **Output:** Overlay visuals on video and log data to CSV/Database.
+    * Crop the license plate → read it with the Groq vision model → validate against Indian plate formats (state-wise / BH) via regex. If the plate can't be read, the next sharpest frame after the violation is tried.
+    * Look up the validated plate against the government RTO API for Insurance / PUC status.
+6.  **Output:** Generate an e-challan PDF with the evidence frame, store it in AWS S3, and notify the owner by SMS (Twilio). OCR'd plates are also appended to `ocr results/ocr_results.txt`.
 
 ---
 
@@ -73,6 +73,12 @@ The system operates on a pipeline approach:
 
 ### Why YOLOv12?
 We utilize **YOLOv12** by Ultralytics. Unlike previous iterations, YOLOv12 introduces an **attention-centric architecture** that significantly improves feature extraction in complex urban environments (e.g., crowded Indian roads). It balances the speed of CNNs with the global context awareness of Transformers.
+
+The paper compares YOLOv11 and YOLOv12 across the nano → extra-large sizes and selects models by task, trading off accuracy against speed:
+* **YOLOv12x** for the accuracy-critical steps — license-plate detection and the OCR region of interest.
+* **YOLOv12m** for vehicle detection, which gives near-large accuracy at a fraction of the memory and compute.
+
+The detector is pre-trained on COCO and fine-tuned on a custom dataset of 4K video captured around a local lane from multiple angles and exposures (day, fog, night), annotated with vehicle and license-plate bounding boxes.
 * *Reference:* [Ultralytics YOLOv12 Documentation](https://docs.ultralytics.com/models/yolo12/)
 
 ### Speed Estimation Logic
@@ -93,10 +99,10 @@ To calculate speed from a 2D video feed:
 
 | Component | Tool/Technology | Description |
 | :--- | :--- | :--- |
-| **Language** | Python 3.9+ | Core logic and scripting. |
-| **Detection Model** | **YOLOv12** | Custom trained on Indian Traffic Dataset. |
+| **Language** | Python 3.12 | Core logic and scripting. |
+| **Detection Model** | **YOLOv12** (x for plate/OCR, m for vehicles) | Custom trained on a 4K Indian-road dataset. |
 | **Framework** | PyTorch / Ultralytics | Model training and inference. |
-| **Computer Vision** | OpenCV | Image processing, perspective transforms. |
+| **Computer Vision** | OpenCV | Frame processing, cropping, and drawing. |
 | **OCR** | Groq hosted vision model (Llama 4 Scout) | Text extraction from license plates. |
 | **Tracking** | ByteTrack (Ultralytics) | Multi-object tracking for vehicle persistence. |
 | **App / UI** | Streamlit | Upload a video and run the detectors from the browser. |
@@ -107,12 +113,34 @@ To calculate speed from a 2D video feed:
 
 ## 📊 Performance Evaluation
 
-> **Note:** A reproducible evaluation (dataset splits, scripts, and raw results)
-> is not yet published in this repository. Any accuracy, mAP, FPS, or OCR numbers
-> should be treated as preliminary until a documented evaluation is added under
-> `docs/evaluation.md`. Detection throughput (model FPS) is measured separately
-> from the end-to-end pipeline, which also includes the OCR API call, PDF
-> generation, S3 upload, and SMS and is therefore much slower per event.
+The figures below are reported in the accompanying ICICIS 2025 paper, evaluated
+on the authors' custom dataset.
+
+**Detection models (object detection)**
+
+| Model | mAP@50–95 | Accuracy | F1 Score |
+| :--- | :--- | :--- | :--- |
+| YOLOv11-l | 88.65% | 97.49% | 99.23% |
+| YOLOv11-x | 87.81% | 98.24% | 99.25% |
+| YOLOv12-m | 86.66% | 93.29% | 97.94% |
+| YOLOv12-l | 88.66% | 98.13% | 99.25% |
+| **YOLOv12-x** | **90.61%** | **98.87%** | **99.34%** |
+
+**Pipeline results**
+
+* **Overall accuracy:** 93.76%
+* **Vehicle-type identification:** 97.56%
+* **OCR (plate text correct):** 92.7%
+* **ANPR (plate localization correct):** 98%
+* **Helmet detection:** 93.26%
+
+> **Reproducibility note:** The dataset, train/validation/test splits, and the
+> training/evaluation scripts behind these numbers are not included in this
+> repository, so the results above cannot yet be reproduced from a clone alone.
+> To make them reproducible, add the dataset provenance, splits, and scripts
+> under `docs/evaluation.md`. Also note that model detection FPS is separate from
+> end-to-end throughput, which additionally includes the OCR API call, PDF
+> generation, S3 upload, and SMS.
 
 ---
 
@@ -196,7 +224,25 @@ Video paths, model paths, and detection parameters are configured at the top of
 
 ## 🔗 References & Citations
 
-This project is built upon the cutting-edge research in object detection. If you use this repository or the YOLOv12 architecture in your research, please cite the original authors:
+### This Project
+
+This repository accompanies the following paper. If you use this work, please cite:
+
+```bibtex
+@inproceedings{samant2025itss,
+  title     = {Intelligent Traffic Surveillance: A Vision-based System for Detecting Traffic Rule Violations},
+  author    = {Samant, Harsh and Bhosale, Shreevardhan and Doshi, Kush and Kale, Dashrath and Shah, Rishabh},
+  booktitle = {2025 2nd International Conference on Integration of Computational Intelligent System (ICICIS)},
+  address   = {Pune, India},
+  year      = {2025},
+  publisher = {IEEE},
+  doi       = {10.1109/ICICIS65613.2025.11371065}
+}
+```
+
+Paper: [IEEE Xplore — DOI 10.1109/ICICIS65613.2025.11371065](https://ieeexplore.ieee.org/document/11371065)
+
+This project also builds on the following research in object detection. If you use the YOLOv12 architecture, please cite the original authors:
 
 ### YOLOv12 Architecture
 
