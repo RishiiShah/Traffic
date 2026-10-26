@@ -175,7 +175,13 @@ class OCR3:
         return None
 
     def crop_to_roi(self, img: np.ndarray, xyxy: list[float]) -> np.ndarray:
+        """Crop `img` to `xyxy`, clamping the box to the image bounds."""
+        h, w = img.shape[:2]
         xmin, ymin, xmax, ymax = map(int, xyxy)
+        xmin = max(0, min(xmin, w - 1))
+        ymin = max(0, min(ymin, h - 1))
+        xmax = max(xmin + 1, min(xmax, w))
+        ymax = max(ymin + 1, min(ymax, h))
         return img[ymin:ymax, xmin:xmax]
 
     def OCR_Inference(self, image_url: str) -> str | None:
@@ -215,14 +221,29 @@ class OCR3:
         logging.info(f"Appended '{plate}' to {path}")
 
     def perform_ocr(self, frame: np.ndarray) -> str | None:
-        """Run OCR on a frame and return a validated plate string.
+        """Localize the license plate, then OCR only that crop.
 
-        Returns the normalized plate on success, or None when nothing readable
-        or format-valid was produced. Returning None (rather than an
-        "Invalid: ..." string) keeps unreadable plates from leaking into the
-        downstream RTO/compliance lookups.
+        Pipeline:
+          1. Detect the plate bounding box with the YOLO plate model.
+          2. If none is found, return None (do not OCR the whole frame).
+          3. Crop to the plate ROI (clamped to image bounds).
+          4. Send the crop to the vision model, normalize, and validate.
+
+        Returns the normalized plate on success, or None when no plate is
+        detected or the OCR result fails format validation. Returning None
+        keeps unreadable plates out of the downstream RTO/compliance lookups.
         """
-        url = self.convert_image_to_data_url(frame)
+        bbox = self.detect_number_plate(frame)
+        if bbox is None:
+            logging.info("No license plate detected in frame.")
+            return None
+
+        roi = self.crop_to_roi(frame, bbox)
+        if roi is None or roi.size == 0:
+            logging.info("License-plate crop was empty.")
+            return None
+
+        url = self.convert_image_to_data_url(roi)
         raw = self.OCR_Inference(url) or ""
         candidate = re.sub(r'[^A-Z0-9]', '', raw.upper())
 

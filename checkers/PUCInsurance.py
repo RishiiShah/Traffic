@@ -75,9 +75,11 @@ def check_expiry(date_str: str) -> ComplianceStatus:
         expiry = datetime.strptime(date_str, "%d-%b-%Y")
     except (ValueError, TypeError):
         return ComplianceStatus.ERROR
+    # Compare calendar dates so a document expiring *today* is still VALID for
+    # the whole of today, rather than flipping to EXPIRED later in the day.
     return (
         ComplianceStatus.VALID
-        if expiry >= datetime.today()
+        if expiry.date() >= datetime.today().date()
         else ComplianceStatus.EXPIRED
     )
 

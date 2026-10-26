@@ -31,3 +31,6 @@ boto3>=1.34.0,<2.0.0
 
 # --- UI ---
 streamlit>=1.30.0,<2.0.0
+
+# --- Testing (dev) ---
+pytest>=8.0.0
