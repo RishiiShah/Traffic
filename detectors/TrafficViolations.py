@@ -16,7 +16,7 @@ from pdfgen.pdf_generator import generate_pdf
 from sms.sms_sender import SmsSender
 from utils.s3_uploader import upload_to_s3
 from .OCR import process_image_for_ocr
-from checkers.PUCInsurance import details, convert_check
+from checkers.PUCInsurance import details, check_expiry, ComplianceStatus
 
 def intersection_area_ratio(boxA, boxB):
     """
@@ -287,9 +287,14 @@ class TrafficViolationDetector:
             if violation:
                 frame_filename = f"frame_{frame_count}.jpg"
                 frame_path     = os.path.join(self.violation_dir, frame_filename)
-                self.executor.submit(cv2.imwrite, frame_path, frame)
-                # a) OCR
-                plate_text = process_image_for_ocr(frame_path) or "UNKNOWN"
+                # Write the frame synchronously: OCR below reads it back
+                # immediately, so we must not race an async write.
+                if not cv2.imwrite(frame_path, frame):
+                    raise RuntimeError(f"Failed to save violation frame: {frame_path}")
+                # a) OCR (ocr_instance is required by process_image_for_ocr)
+                plate_text = process_image_for_ocr(
+                    frame_path, ocr_instance=self.ocr_instance
+                ) or "UNKNOWN"
                 now_str    = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 challan_no = f"{frame_count}_{int(datetime.datetime.now().timestamp())}"
 
@@ -297,20 +302,24 @@ class TrafficViolationDetector:
                 rto_info   = details(plate_text)
                 puc_date   = rto_info.get("PUCExpiryDate", "")
                 ins_date   = rto_info.get("InsuranceExpiryDate", "")
-                # puc_date   = "13-Jun-2024"  # Placeholder for testing
-                # ins_date   = "15-Jun-2024"  # Placeholder for testing
-                puc_ok     = convert_check(puc_date) if puc_date else False
-                ins_ok     = convert_check(ins_date) if ins_date else False
+                puc_status = check_expiry(puc_date)
+                ins_status = check_expiry(ins_date)
 
-                # c) Compute extra fines & description
+                # c) Compute extra fines & description.
+                # Only a CONFIRMED expired document adds a penalty; unknown /
+                # error states are reported but never fined.
                 extra      = 0
                 desc_parts = ["Red-light violation"]
-                if not puc_ok:
+                if puc_status == ComplianceStatus.EXPIRED:
                     extra     += PUC_FINE
                     desc_parts.append(f"Expired PUC ({puc_date})")
-                if not ins_ok:
+                elif puc_status in (ComplianceStatus.UNKNOWN, ComplianceStatus.ERROR):
+                    desc_parts.append("PUC status unverified")
+                if ins_status == ComplianceStatus.EXPIRED:
                     extra     += INSURANCE_FINE
                     desc_parts.append(f"Expired Insurance ({ins_date})")
+                elif ins_status in (ComplianceStatus.UNKNOWN, ComplianceStatus.ERROR):
+                    desc_parts.append("Insurance status unverified")
                 full_desc  = "; ".join(desc_parts)
                 total_fee  = self.base_fee + extra
 

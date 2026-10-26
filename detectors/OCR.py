@@ -183,10 +183,9 @@ class OCR3:
             "role": "user",
             "content": [
                 {"type": "text", "text": (
-                    "read the license plate, output only the text. I want you to take your time think 10 times and come up with the best answer. I need the license plate number as accurate as possible. "
-                    "Patterns: [A-Z]{2}[0-9]{2}[A-Z]{2}[0-9]{4} or "
-                    "[0-9]{2}[A-Z]{2}[0-9]{4}[A-Z]{2}."
-                    "Your Output should be just the text of the number plate nothing else. JJUST GIVE ME THE TEXT AS ACCCURATE AS POSSIBLE THINK 10 times. "
+                    "Read the license plate in the image and output only the "
+                    "plate text with no spaces or extra words. Expected formats: "
+                    "AA00AA0000 or 00AA0000AA. If no plate is readable, output NONE."
                 )},
                 {"type": "image_url", "image_url": {"url": image_url}}
             ]
@@ -195,8 +194,8 @@ class OCR3:
             resp = self.client.chat.completions.create(
                 model="meta-llama/llama-4-scout-17b-16e-instruct",
                 messages=messages,
-                temperature=1.0,
-                max_completion_tokens=256,
+                temperature=0.0,
+                max_completion_tokens=64,
             )
             return resp.choices[0].message.content.strip()
         except Exception as e:
@@ -215,38 +214,30 @@ class OCR3:
             f.write(plate + ",")
         logging.info(f"Appended '{plate}' to {path}")
 
-    def perform_ocr(self, frame: np.ndarray) -> str:
-        """
-        1) detect plate
-        2) if none, bail
-        3) crop, OCR, validate, save
-        """
-        # bbox = self.detect_number_plate(frame)
-        # if bbox is None:
-        #     logging.warning("No plate detected.")
-        #     return "No plate detected."
+    def perform_ocr(self, frame: np.ndarray) -> str | None:
+        """Run OCR on a frame and return a validated plate string.
 
-        # roi = self.crop_to_roi(frame, bbox)
-        # if roi.size == 0:
-        #     logging.warning("Cropped ROI empty.")
-        #     return "Empty ROI."
-
+        Returns the normalized plate on success, or None when nothing readable
+        or format-valid was produced. Returning None (rather than an
+        "Invalid: ..." string) keeps unreadable plates from leaking into the
+        downstream RTO/compliance lookups.
+        """
         url = self.convert_image_to_data_url(frame)
         raw = self.OCR_Inference(url) or ""
         candidate = re.sub(r'[^A-Z0-9]', '', raw.upper())
 
-        if any(p.fullmatch(candidate) for p in PLATE_PATTERNS):
+        if candidate and any(p.fullmatch(candidate) for p in PLATE_PATTERNS):
             self.save_ocr_result(candidate)
             return candidate
-        else:
-            logging.info(f"Rejected '{candidate}' (invalid format)")
-            return f"Invalid: {candidate}"
 
-    def batch_ocr(self, frames: list[np.ndarray]) -> list[str]:
+        logging.info(f"Rejected '{candidate}' (invalid or empty plate format)")
+        return None
+
+    def batch_ocr(self, frames: list[np.ndarray]) -> list[str | None]:
         return [self.perform_ocr(f) for f in frames]
 
 
-def process_image_for_ocr(image_path: str, ocr_instance: OCR3) -> str:
+def process_image_for_ocr(image_path: str, ocr_instance: OCR3) -> str | None:
     img = cv2.imread(image_path)
     if img is None:
         raise FileNotFoundError(f"Image not found: {image_path}")

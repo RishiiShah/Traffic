@@ -8,6 +8,7 @@ from detectors.TrafficViolations import TrafficViolationDetector
 from detectors.HelmetDetection import HelmetDetectionDetector
 from detectors.Speeding import VehicleSpeedDetector
 from detectors.OCR import OCR3
+from utils.s3_uploader import resolve_wkhtmltopdf_path
 
 # Load environment variables
 from dotenv import load_dotenv
@@ -17,7 +18,7 @@ load_dotenv()
 TWILIO_SID     = os.getenv("TWILIO_ACCOUNT_SID")
 TWILIO_TOKEN   = os.getenv("TWILIO_AUTH_TOKEN")
 TWILIO_FROM    = os.getenv("TWILIO_PHONE_NUMBER")
-VIOLATOR_MOBILE = "+918108424468"
+VIOLATOR_MOBILE = os.getenv("DEMO_PHONE_NUMBER")
 S3_BUCKET      = os.getenv("AWS_S3_BUCKET", "traffic-violation-pdfs")
 S3_REGION      = os.getenv("AWS_REGION", "ap-south-1")
 
@@ -27,7 +28,7 @@ YOLO_MODEL     = MODELS_DIR / "yolo12n.pt"
 HELMET_MODEL    = MODELS_DIR / "helmet.pt"
 PLATE_MODEL      = MODELS_DIR / "train3_best.pt"
 TEMPLATE_PATH  = BASE_DIR / "template" / "chalan_template.html"
-WKHTMLTOPDF    = r"C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe"
+WKHTMLTOPDF    = resolve_wkhtmltopdf_path()
 LOGO_URI       = (BASE_DIR / "static" / "logo.jpg").resolve().as_uri()
 
 st.title("Traffic Violation Detection System")

@@ -9,7 +9,7 @@ from pdfgen.pdf_generator import generate_pdf
 from sms.sms_sender import SmsSender
 from utils.s3_uploader import upload_to_s3
 from detectors.OCR import process_image_for_ocr, OCR3
-from checkers.PUCInsurance import details, convert_check
+from checkers.PUCInsurance import details, check_expiry, ComplianceStatus
 
 # Extra fines
 PUC_FINE       = 1000
@@ -67,7 +67,12 @@ class VehicleSpeedDetector:
         self.cap = cv2.VideoCapture(video_path)
         if not self.cap.isOpened():
             raise IOError(f"Cannot open video {video_path}")
-        self.fps = int(self.cap.get(cv2.CAP_PROP_FPS))
+        # Some containers report 0/NaN FPS; fall back to a sane default so we
+        # never divide by zero when estimating speed.
+        fps = self.cap.get(cv2.CAP_PROP_FPS)
+        self.fps = int(fps) if fps and fps > 0 else 30
+        if not fps or fps <= 0:
+            print(f"[!] Invalid FPS reported by video; defaulting to {self.fps}")
 
         # Params
         self.mpp = meter_per_pixel
@@ -114,6 +119,10 @@ class VehicleSpeedDetector:
                 classes=self.classes
             )
             for box in results[0].boxes:
+                # A detection without a tracker ID can't be tracked across
+                # frames, so skip it rather than crashing on box.id[0].
+                if box.id is None:
+                    continue
                 obj_id = int(box.id[0])
                 x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
                 cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
@@ -152,23 +161,27 @@ class VehicleSpeedDetector:
         # OCR for plate
         plate = process_image_for_ocr(frame_path, ocr_instance=self.ocr_instance) or "UNKNOWN"
 
-        # --- PUC & Insurance check ---
-        # rto_info   = details(plate)
-        # puc_date   = rto_info.get("PUCExpiryDate", "")
-        # ins_date   = rto_info.get("InsuranceExpiryDate", "")
-        puc_date   = "13-Jun-2024"  # Placeholder for testing
-        ins_date   = "15-Jun-2024"  # Placeholder for testing
-        puc_ok     = convert_check(puc_date) if puc_date else False
-        ins_ok     = convert_check(ins_date) if ins_date else False
+        # --- PUC & Insurance check (live RTO lookup) ---
+        rto_info   = details(plate)
+        puc_date   = rto_info.get("PUCExpiryDate", "")
+        ins_date   = rto_info.get("InsuranceExpiryDate", "")
+        puc_status = check_expiry(puc_date)
+        ins_status = check_expiry(ins_date)
 
+        # Only a CONFIRMED expired document adds a penalty; unknown / error
+        # states are reported but never fined.
         extra      = 0
         desc_parts = [f"Overspeeding at {speed:.2f} m/s"]
-        if not puc_ok:
+        if puc_status == ComplianceStatus.EXPIRED:
             extra      += PUC_FINE
             desc_parts.append(f"Expired PUC ({puc_date})")
-        if not ins_ok:
+        elif puc_status in (ComplianceStatus.UNKNOWN, ComplianceStatus.ERROR):
+            desc_parts.append("PUC status unverified")
+        if ins_status == ComplianceStatus.EXPIRED:
             extra      += INSURANCE_FINE
             desc_parts.append(f"Expired Insurance ({ins_date})")
+        elif ins_status in (ComplianceStatus.UNKNOWN, ComplianceStatus.ERROR):
+            desc_parts.append("Insurance status unverified")
         full_desc = "; ".join(desc_parts)
         total_fee = self.base_fee + extra
 
